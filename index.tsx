@@ -16,8 +16,8 @@ interface InputImage {
 
 interface ArchitecturalPlan {
     walls: Array<{ boundary: Array<{ x: number; y: number }> }>;
-    doors: Array<{ boundary: Array<{ x: number; y: number }> }>;
-    windows: Array<{ boundary: Array<{ x: number; y: number }> }>;
+    doors?: Array<{ boundary: Array<{ x: number; y: number }> }>;
+    windows?: Array<{ boundary: Array<{ x: number; y: number }> }>;
     dimensions: { width: number; height: number };
 }
 
@@ -295,10 +295,10 @@ const IntelligentArchitectApp = ({ userEmail, onLogout }: { userEmail: string, o
         dxf += createPolyline(wall.boundary, 'WALLS', true);
     });
 
-    plan.doors.forEach(door => {
+    plan.doors?.forEach(door => {
         dxf += createPolyline(door.boundary, 'DOORS', false);
     });
-    plan.windows.forEach(window => {
+    plan.windows?.forEach(window => {
         dxf += createPolyline(window.boundary, 'WINDOWS', false);
     });
 
@@ -590,37 +590,44 @@ The output must be a minimalist line drawing showing only the structural layout.
             type: Type.OBJECT,
             properties: {
                 walls: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { boundary: boundarySchema } } },
-                doors: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { boundary: boundarySchema } } },
-                windows: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { boundary: boundarySchema } } },
                 dimensions: { type: Type.OBJECT, properties: { width: { type: Type.NUMBER }, height: { type: Type.NUMBER } } }
             },
-            required: ['walls', 'doors', 'windows', 'dimensions']
+            required: ['walls', 'dimensions']
         };
 
-        const jsonPrompt = `You are a specialist AI model that functions as a high-fidelity raster-to-vector conversion engine. Your sole purpose is to analyze the provided clean, black-and-white architectural image and generate a precise JSON representation of its structural elements.
+        const jsonPrompt = `You are a high-precision, automated raster-to-vector conversion engine. Your performance is judged solely on pixel-perfect accuracy.
 
-**PRIMARY DIRECTIVE:**
-If a source image is provided, it is the absolute and only source of truth for all geometry. The user's text prompt should only influence style. Your output must be a geometrically perfect, pixel-for-pixel match to the solid black wall shapes in the image.
+**Primary Objective:** Your single purpose is to convert a raster image of a floor plan into a structured JSON object representing the walls.
 
-**EXAMPLE of a correct thick wall polygon:**
-A simple horizontal wall that is 100 units long and 10 units thick starting at (10, 10) would have this 'boundary':
-\`[{"x": 10, "y": 10}, {"x": 110, "y": 10}, {"x": 110, "y": 20}, {"x": 10, "y": 20}, {"x": 10, "y": 10}]\`
-This is a closed polygon. This is the correct format.
+**Input:** A black-and-white raster image where structural walls are solid black filled areas.
+**Output:** A single, raw JSON object. No other text, explanations, or markdown is permitted.
 
-**YOUR TASK:**
-1.  **DETERMINE COORDINATE SYSTEM:** First, determine the exact pixel dimensions of the input image. This is your coordinate space. The top-left corner is (0,0).
-2.  **TRACE WALLS:** Meticulously trace the **outer perimeter** of every single **solid black shape**. These shapes represent the structural walls. Each wall MUST be a **contiguous, closed polygon** (the first and last {x, y} point must be identical), as shown in the example.
-3.  **IDENTIFY OPENINGS:** Identify all doors and windows (represented by clean gaps in the black walls) and represent them as simple **line segments** (an array of exactly two {x, y} points).
-4.  **GENERATE JSON:** Generate a single, raw JSON object containing this data. Do not include any other text, explanations, or markdown.
+---
+**ABSOLUTE DIRECTIVES**
+---
+1.  **ACCURACY IS PARAMOUNT:** The output MUST be a literal, pixel-perfect trace of the solid black areas. There is ZERO tolerance for approximation or simplification.
+2.  **WALLS ARE POLYGONS:** Every wall, regardless of size, MUST be represented as a closed polygon defining its full external perimeter. The first and last coordinate pair in a \`boundary\` array MUST be identical.
+3.  **COORDINATE SYSTEM:** The coordinate system is defined by the input image's pixel dimensions. The origin (0,0) is the TOP-LEFT corner.
 
-***CRITICAL FAILURE CONDITIONS - ANY VIOLATION IS A COMPLETE FAILURE:***
-- **DO NOT draw a simple box around a room.** This is the most common error and is completely unacceptable. You must trace the individual walls that make up the room.
-- **DO NOT represent walls as single lines.** This is incorrect. Walls have thickness and must be polygons.
-- **DO NOT simplify, approximate, or "clean up" the geometry.** Your task is to trace the provided pixels exactly. Simplification is a critical failure.
-- **DO NOT trace any non-structural elements.** The input is pre-cleaned; trace only the black shapes.
-- **DO NOT generate any geometry NOT present in the image.**
+---
+**TRACING PROTOCOL (Follow these steps):**
+---
+1.  Identify all distinct, continuous areas of solid black pixels (#000000).
+2.  For each area, trace its exact external boundary where black pixels meet non-black pixels.
+3.  Record the sequence of vertex coordinates for this boundary with perfect precision.
+4.  Format these vertices into a closed polygon structure for the JSON output.
 
-Your performance is measured solely by your pixel-perfect accuracy. Begin analysis and generate the JSON output now.`;
+---
+*** CRITICAL FAILURE MODES (DO NOT DO THIS) ***
+---
+*   **FAILURE: ANY SIMPLIFICATION.** Any smoothing, straightening, or "beautifying" of the trace is a critical failure.
+*   **FAILURE: CENTERLINE TRACING.** Representing a wall with a single line is a critical failure.
+*   **FAILURE: ROOM BOXES.** Drawing a simple box around a room instead of tracing the actual wall geometry is a critical failure.
+*   **FAILURE: TRACING NON-WALLS.** Tracing ANY element that is not a solid black wall (e.g., furniture, text, shadows, patterns) is a critical failure.
+*   **FAILURE: OPEN POLYGONS.** Every wall polygon must be fully closed.
+
+Execute the conversion now. Provide only the raw JSON output.`;
+
 
         const imagePart = { inlineData: { mimeType: maskImageMimeType, data: maskImageBase64 } };
         const textPart = { text: jsonPrompt };
@@ -898,10 +905,10 @@ Your performance is measured solely by your pixel-perfect accuracy. Begin analys
                                 {planData.walls.map((wall, i) => (
                                 <polygon key={`wall-${i}`} points={wall.boundary.map(p => `${p.x},${p.y}`).join(' ')} className="wall-shape" vectorEffect="non-scaling-stroke" />
                                 ))}
-                                {planData.windows.map((window, i) => (
+                                {planData.windows?.map((window, i) => (
                                     <polyline key={`window-${i}`} points={window.boundary.map(p => `${p.x},${p.y}`).join(' ')} className="window-shape" vectorEffect="non-scaling-stroke" />
                                 ))}
-                                {planData.doors.map((door, i) => (
+                                {planData.doors?.map((door, i) => (
                                     <polyline key={`door-${i}`} points={door.boundary.map(p => `${p.x},${p.y}`).join(' ')} className="door-shape" vectorEffect="non-scaling-stroke" />
                                 ))}
                             </svg>
