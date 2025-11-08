@@ -1,10 +1,23 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import { GoogleGenAI, Modality, Type } from '@google/genai';
 import './index.css';
 
-type Mode = 'text-to-image' | 'image-to-interior' | 'architectural' | 'outline';
+// Fix: Moved the AIStudio interface into the `declare global` block to resolve a TypeScript type conflict.
+// When an interface is defined in a file with imports/exports, it becomes local to that module. By moving
+// it into `declare global`, it becomes a true global type, preventing conflicts with other declarations.
+declare global {
+  interface AIStudio {
+    hasSelectedApiKey: () => Promise<boolean>;
+    openSelectKey: () => Promise<void>;
+  }
+
+  interface Window {
+    aistudio?: AIStudio;
+  }
+}
+
+type Mode = 'text-to-image' | 'image-to-interior' | 'architectural' | 'outline' | 'video';
 type StylePreset = 'photorealistic' | 'cartoon' | 'watercolor' | 'cyberpunk';
 type FilterType = 'grayscale' | 'sepia' | 'invert';
 
@@ -26,6 +39,13 @@ interface OutlineData {
     dimensions: { width: number; height: number };
 }
 
+const generationCosts: Record<Mode, number> = {
+  'text-to-image': 1,
+  'image-to-interior': 2,
+  'outline': 2,
+  'architectural': 3,
+  'video': 10,
+};
 
 const stylePresets: Record<StylePreset, string> = {
   photorealistic: ', photorealistic, 8k, highly detailed, sharp focus',
@@ -92,11 +112,118 @@ const Login = ({ onLogin }: { onLogin: (email: string) => void }) => {
   );
 };
 
+const PaymentModal = ({ onClose, onPurchase }: { onClose: () => void; onPurchase: (credits: number) => void; }) => {
+    const [selectedPackage, setSelectedPackage] = useState(120);
+    const [name, setName] = useState('');
+    const [cardNumber, setCardNumber] = useState('');
+    const [expiry, setExpiry] = useState('');
+    const [cvc, setCvc] = useState('');
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [error, setError] = useState('');
 
-const IntelligentArchitectApp = ({ userEmail, onLogout }: { userEmail: string, onLogout: () => void }) => {
+    const packages = [
+        { credits: 50, price: 5.00, bonus: '' },
+        { credits: 120, price: 10.00, bonus: 'BONUS' },
+        { credits: 300, price: 20.00, bonus: 'BONUS' },
+    ];
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        setError('');
+
+        if (!name || !cardNumber || !expiry || !cvc) {
+            setError('Please fill out all payment fields.');
+            return;
+        }
+        if (cardNumber.replace(/\s/g, '').length !== 16) {
+            setError('Please enter a valid 16-digit card number.');
+            return;
+        }
+        if (!/^\d{2}\s\/\s\d{2}$/.test(expiry)) {
+            setError('Please use MM / YY format for expiry.');
+            return;
+        }
+        if (!/^\d{3,4}$/.test(cvc)) {
+            setError('Please enter a valid CVC.');
+            return;
+        }
+
+        setIsProcessing(true);
+        setTimeout(() => {
+            onPurchase(selectedPackage);
+            setIsProcessing(false);
+            onClose();
+        }, 1500); // Simulate network delay
+    };
+
+    const handleCardNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const value = e.target.value.replace(/\s/g, '').replace(/(\d{4})/g, '$1 ').trim();
+        if (value.length <= 19) setCardNumber(value);
+    };
+
+    const handleExpiryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        let value = e.target.value.replace(/[^\d]/g, '');
+        if (value.length > 4) value = value.slice(0, 4);
+        if (value.length > 2) {
+            value = `${value.slice(0, 2)} / ${value.slice(2)}`;
+        }
+        setExpiry(value);
+    };
+
+
+    const selectedPrice = packages.find(p => p.credits === selectedPackage)?.price.toFixed(2) || '0.00';
+
+    return (
+        <div className="payment-modal-overlay" onClick={onClose}>
+            <div className="payment-modal" onClick={e => e.stopPropagation()}>
+                <button className="close-modal-button" onClick={onClose} aria-label="Close payment modal">&times;</button>
+                <h2 className="payment-title">Purchase Credits</h2>
+                <p>Select a package to continue creating with AI.</p>
+                <div className="credit-packages">
+                    {packages.map(p => (
+                        <div key={p.credits} className={`credit-package ${selectedPackage === p.credits ? 'selected' : ''}`} onClick={() => setSelectedPackage(p.credits)}>
+                            {p.bonus && <div className="package-bonus">{p.bonus}</div>}
+                            <strong>{p.credits}</strong>
+                            <span>Credits</span>
+                            <div className="package-price">${p.price.toFixed(2)}</div>
+                        </div>
+                    ))}
+                </div>
+                <form onSubmit={handleSubmit} className="payment-form">
+                    {error && <div className="payment-error">{error}</div>}
+                    <div className="form-group">
+                        <label htmlFor="card-name">Cardholder Name</label>
+                        <input type="text" id="card-name" value={name} onChange={e => setName(e.target.value)} placeholder="John Doe" />
+                    </div>
+                    <div className="form-group">
+                        <label htmlFor="card-number">Card Number</label>
+                        <input type="text" id="card-number" value={cardNumber} onChange={handleCardNumberChange} placeholder="1234 5678 1234 5678" />
+                    </div>
+                    <div className="form-row">
+                        <div className="form-group">
+                            <label htmlFor="expiry-date">Expiry</label>
+                            <input type="text" id="expiry-date" value={expiry} onChange={handleExpiryChange} placeholder="MM / YY" />
+                        </div>
+                        <div className="form-group">
+                            <label htmlFor="cvc">CVC</label>
+                            <input type="text" id="cvc" value={cvc} onChange={e => /^\d{0,4}$/.test(e.target.value) && setCvc(e.target.value)} placeholder="123" />
+                        </div>
+                    </div>
+                    <button type="submit" className="pay-button" disabled={isProcessing}>
+                        {isProcessing ? <div className="mini-spinner"></div> : `Pay $${selectedPrice}`}
+                    </button>
+                </form>
+            </div>
+        </div>
+    );
+};
+
+
+const IntelligentArchitectApp = ({ user, onLogout, onDeductCredits, onPurchaseCredits }: { user: AppUser; onLogout: () => void; onDeductCredits: (type: 'free-image' | 'free-video' | 'paid', amount: number) => void; onPurchaseCredits: (amount: number) => void; }) => {
   const [prompt, setPrompt] = useState('');
   const [originalImage, setOriginalImage] = useState<string | null>(null);
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
+  const [generatedVideo, setGeneratedVideo] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>('text-to-image');
@@ -106,6 +233,10 @@ const IntelligentArchitectApp = ({ userEmail, onLogout }: { userEmail: string, o
   const [selectedStyle, setSelectedStyle] = useState<StylePreset | null>(null);
   const [rooms, setRooms] = useState([{ id: 1, name: '', type: 'Bedroom' }]);
   const [isGeneratingWireframe, setIsGeneratingWireframe] = useState(false);
+  const [isApiKeyRequiredAndMissing, setIsApiKeyRequiredAndMissing] = useState(false);
+  const [videoAspectRatio, setVideoAspectRatio] = useState<'16:9' | '9:16'>('16:9');
+  const [videoResolution, setVideoResolution] = useState<'720p' | '1080p'>('1080p');
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
 
 
   // Cropping State
@@ -164,6 +295,7 @@ const IntelligentArchitectApp = ({ userEmail, onLogout }: { userEmail: string, o
   const resetOutputs = () => {
     setOriginalImage(null);
     setGeneratedImage(null);
+    setGeneratedVideo(null);
     setPlanData(null);
     setOutlineData(null);
     setError(null);
@@ -176,7 +308,15 @@ const IntelligentArchitectApp = ({ userEmail, onLogout }: { userEmail: string, o
     resetZoomAndPan();
   };
 
-  const handleModeChange = (newMode: Mode) => {
+  const handleModeChange = async (newMode: Mode) => {
+    if (newMode === 'video') {
+      if (window.aistudio && !(await window.aistudio.hasSelectedApiKey())) {
+          setIsApiKeyRequiredAndMissing(true);
+          return;
+      }
+    }
+
+    setIsApiKeyRequiredAndMissing(false);
     setMode(newMode);
     resetOutputs();
     setInputImage(null);
@@ -187,6 +327,19 @@ const IntelligentArchitectApp = ({ userEmail, onLogout }: { userEmail: string, o
     }
   };
   
+  const handleSelectKeyAndSetMode = async () => {
+      if (window.aistudio) {
+          await window.aistudio.openSelectKey();
+          setIsApiKeyRequiredAndMissing(false);
+          // Directly set mode and reset, bypassing the check in handleModeChange
+          setMode('video');
+          resetOutputs();
+          setInputImage(null);
+          setPrompt('');
+          setSelectedStyle(null);
+      }
+  };
+
   const handleStyleClick = (style: StylePreset) => {
     // If the clicked style is already selected, deselect it and remove its text
     if (selectedStyle === style) {
@@ -358,6 +511,37 @@ const IntelligentArchitectApp = ({ userEmail, onLogout }: { userEmail: string, o
     URL.revokeObjectURL(url);
   };
   
+    const applyWatermark = (imageUrl: string): Promise<string> => {
+        return new Promise((resolve, reject) => {
+            const image = new Image();
+            image.crossOrigin = "anonymous";
+            image.src = imageUrl;
+            image.onload = () => {
+                const canvas = document.createElement('canvas');
+                canvas.width = image.naturalWidth;
+                canvas.height = image.naturalHeight;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) return reject(new Error("Could not get canvas context"));
+
+                ctx.drawImage(image, 0, 0);
+
+                const fontSize = Math.max(24, Math.floor(image.naturalWidth / 40));
+                ctx.font = `bold ${fontSize}px Inter, sans-serif`;
+                ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
+                ctx.textAlign = "right";
+                ctx.textBaseline = "bottom";
+                ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
+                ctx.shadowBlur = 5;
+
+                ctx.fillText("Intelligent Architect", canvas.width - 15, canvas.height - 15);
+                
+                const mimeType = imageUrl.match(/^data:(image\/[^;]+);/)?.[1] || 'image/png';
+                resolve(canvas.toDataURL(mimeType));
+            };
+            image.onerror = (err) => reject(err);
+        });
+    };
+
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!prompt || isLoading) return;
@@ -371,6 +555,32 @@ const IntelligentArchitectApp = ({ userEmail, onLogout }: { userEmail: string, o
         return;
     }
 
+    const cost = generationCosts[mode];
+    const isVideo = mode === 'video';
+    let creditTypeToDeduct: 'free-image' | 'free-video' | 'paid' | null = null;
+    let useWatermark = false;
+
+    if (isVideo) {
+        if (user.freeVideoCredits > 0) {
+            creditTypeToDeduct = 'free-video';
+        } else if (user.paidCredits >= cost) {
+            creditTypeToDeduct = 'paid';
+        }
+    } else { // Is image
+        if (user.freeImageCredits > 0) {
+            creditTypeToDeduct = 'free-image';
+            useWatermark = true;
+        } else if (user.paidCredits >= cost) {
+            creditTypeToDeduct = 'paid';
+        }
+    }
+
+    if (!creditTypeToDeduct) {
+        setError(`Insufficient credits. This action requires ${cost} credits. Please purchase more to continue.`);
+        setIsPaymentModalOpen(true);
+        return;
+    }
+
 
     setIsLoading(true);
     resetOutputs();
@@ -378,8 +588,47 @@ const IntelligentArchitectApp = ({ userEmail, onLogout }: { userEmail: string, o
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       let imageUrl: string | null = null;
+      let generationSuccess = false;
 
-      if (mode === 'architectural') {
+      if (mode === 'video') {
+        let operation = await ai.models.generateVideos({
+            model: 'veo-3.1-fast-generate-preview',
+            prompt: prompt,
+            ...(inputImage && { image: { imageBytes: inputImage.base64, mimeType: inputImage.mimeType } }),
+            config: {
+                numberOfVideos: 1,
+                resolution: videoResolution,
+                aspectRatio: videoAspectRatio
+            }
+        });
+    
+        while (!operation.done) {
+            await new Promise(resolve => setTimeout(resolve, 5000));
+            try {
+                operation = await ai.operations.getVideosOperation({ operation: operation });
+            } catch (pollError: any) {
+                if (pollError.message.includes('Requested entity was not found')) {
+                    setIsApiKeyRequiredAndMissing(true);
+                    throw new Error("Your API key seems to be invalid. Please select a valid key.");
+                }
+                throw pollError;
+            }
+        }
+    
+        const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
+        if (downloadLink) {
+            const videoResponse = await fetch(`${downloadLink}&key=${process.env.API_KEY}`);
+            if (!videoResponse.ok) {
+                throw new Error(`Failed to download video: ${videoResponse.statusText}`);
+            }
+            const videoBlob = await videoResponse.blob();
+            const videoUrl = URL.createObjectURL(videoBlob);
+            setGeneratedVideo(videoUrl);
+            generationSuccess = true;
+        } else {
+            throw new Error("Video generation completed, but no download link was provided.");
+        }
+      } else if (mode === 'architectural') {
         const roomDescriptions = rooms.map(r => `- ${r.name} (Type: ${r.type})`).join('\n');
         
         const renderBasePrompt = `The view must be a direct, orthographic projection from directly above, with no perspective or angle. The output should be a clean, professional, fully 2D floor plan.`;
@@ -420,8 +669,7 @@ Rooms to include:\n${roomDescriptions}`;
 
         if (!imageUrl) throw new Error("The model didn't return a visual image. Try a different prompt.");
         
-        setOriginalImage(imageUrl);
-        setGeneratedImage(imageUrl);
+        generationSuccess = true;
       } else if (mode === 'image-to-interior' && inputImage) {
         const imagePart = { inlineData: { mimeType: inputImage.mimeType, data: inputImage.base64 } };
         const textPart = { text: prompt };
@@ -436,6 +684,7 @@ Rooms to include:\n${roomDescriptions}`;
             for (const part of response.candidates[0].content.parts) {
                 if (part.inlineData) {
                     imageUrl = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+                    generationSuccess = true;
                     break;
                 }
             }
@@ -456,6 +705,7 @@ Rooms to include:\n${roomDescriptions}`;
             for (const part of response.candidates[0].content.parts) {
                 if (part.inlineData) {
                     imageUrl = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+                    generationSuccess = true;
                     break;
                 }
             }
@@ -510,13 +760,22 @@ Rooms to include:\n${roomDescriptions}`;
         if (response.generatedImages?.[0]?.image?.imageBytes) {
             const base64ImageBytes = response.generatedImages[0].image.imageBytes;
             imageUrl = `data:image/png;base64,${base64ImageBytes}`;
+            generationSuccess = true;
         }
         if (!imageUrl) setError("The model didn't return an image. Try a different prompt.");
       }
 
-      if (imageUrl && mode !== 'architectural') {
-        setOriginalImage(imageUrl);
-        setGeneratedImage(imageUrl);
+      if (imageUrl) {
+        let finalImageUrl = imageUrl;
+        if (useWatermark) {
+            finalImageUrl = await applyWatermark(imageUrl);
+        }
+        setOriginalImage(finalImageUrl);
+        setGeneratedImage(finalImageUrl);
+      }
+
+      if (generationSuccess && creditTypeToDeduct) {
+          onDeductCredits(creditTypeToDeduct, cost);
       }
     } catch (err: any) {
       console.error("AI Generation Error:", err);
@@ -531,6 +790,10 @@ Rooms to include:\n${roomDescriptions}`;
         errorMessage = 'The AI service is currently experiencing high demand. Please try again in a few moments.';
       } else if (message.includes('invalid data structure') || message.includes('valid SVG')) {
         errorMessage = message;
+      } else if (message.includes('select a valid key')) {
+        errorMessage = message;
+        setIsApiKeyRequiredAndMissing(true);
+        setMode('text-to-image'); // Reset mode away from video
       }
       
       setError(`Sorry, the alchemy failed: ${errorMessage}`);
@@ -622,7 +885,7 @@ The output must be a minimalist line drawing showing only the structural layout.
 ---
 *   **FAILURE: ANY SIMPLIFICATION.** Any smoothing, straightening, or "beautifying" of the trace is a critical failure.
 *   **FAILURE: CENTERLINE TRACING.** Representing a wall with a single line is a critical failure.
-*   **FAILURE: ROOM BOXES.** Drawing a simple box around a room instead of tracing the actual wall geometry is a critical failure.
+*   **FAILURE: ROOM BOXES.** Drawing a simple box around a room instead of a- to trace the actual wall geometry is a critical failure.
 *   **FAILURE: TRACING NON-WALLS.** Tracing ANY element that is not a solid black wall (e.g., furniture, text, shadows, patterns) is a critical failure.
 *   **FAILURE: OPEN POLYGONS.** Every wall polygon must be fully closed.
 
@@ -850,10 +1113,13 @@ Execute the conversion now. Provide only the raw JSON output.`;
 
   const renderOutput = () => {
     if (isLoading) {
+      const loadingMessage = mode === 'video'
+        ? "Crafting your video... This magical process can take a few minutes. Please be patient."
+        : "Conjuring pixels... Your vision is materializing.";
       return (
         <div className="loading-state">
           <div className="spinner"></div>
-          <p>Conjuring pixels... Your vision is materializing.</p>
+          <p>{loadingMessage}</p>
         </div>
       );
     }
@@ -865,6 +1131,19 @@ Execute the conversion now. Provide only the raw JSON output.`;
           <h3>An Error Occurred</h3>
           <p>{error}</p>
           <button onClick={() => setError(null)} className="action-button">Try Again</button>
+        </div>
+      );
+    }
+
+    if (generatedVideo) {
+      return (
+        <div className="output-video-container">
+            <video src={generatedVideo} controls autoPlay loop className="generated-video" />
+            <div className="output-actions">
+                <a href={generatedVideo} download="generated-video.mp4" className="action-button">
+                    Download Video
+                </a>
+            </div>
         </div>
       );
     }
@@ -1021,6 +1300,7 @@ Execute the conversion now. Provide only the raw JSON output.`;
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                 <span>
                     {
+                        mode === 'video' ? "Upload an optional start image" :
                         mode === 'architectural' ? "Upload a sketch, plan, or point cloud slice" :
                         mode === 'outline' ? "Upload an image to create an outline from" :
                         "Upload an image of a room to redesign"
@@ -1059,17 +1339,35 @@ Execute the conversion now. Provide only the raw JSON output.`;
     </div>
   );
 
+  const renderApiKeyPrompt = () => (
+    <div className="api-key-prompt">
+        <h3>API Key Required for Video</h3>
+        <p>To use the experimental video generation features, you must select a project with billing enabled.</p>
+        <p className="api-key-info"><a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer">Learn more about billing.</a></p>
+        <button onClick={handleSelectKeyAndSetMode} className="action-button">Select API Key</button>
+    </div>
+  );
+
   return (
+    <>
+    {isPaymentModalOpen && <PaymentModal onClose={() => setIsPaymentModalOpen(false)} onPurchase={onPurchaseCredits} />}
     <main className="app-container">
       <section className="input-section">
         <header>
           <div className="app-header">
             <h1>Intelligent Architect</h1>
-            <div className="user-info">
-              <span className="user-email" title={userEmail}>{userEmail}</span>
-              <button onClick={onLogout} className="logout-button" aria-label="Logout">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
-              </button>
+             <div className="user-info">
+                <div className="user-credits" onClick={() => setIsPaymentModalOpen(true)} title="View Credit Balance & Plans">
+                    <span>Free: {user.freeImageCredits} Img / {user.freeVideoCredits} Vid</span>
+                    <span className="pro-credits">Pro Credits: {user.paidCredits}</span>
+                </div>
+                <div className="user-actions">
+                    <button onClick={() => setIsPaymentModalOpen(true)} className="upgrade-button">Upgrade</button>
+                    <button onClick={onLogout} className="logout-button" aria-label="Sign Out">
+                        Sign Out
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+                    </button>
+                </div>
             </div>
           </div>
           <p>
@@ -1077,67 +1375,119 @@ Execute the conversion now. Provide only the raw JSON output.`;
             to see, and let AI bring it to life.
           </p>
         </header>
-        <form className="prompt-form" onSubmit={handleGenerate}>
-            <div className="mode-switcher">
-                <button type="button" className={mode === 'text-to-image' ? 'active' : ''} onClick={() => handleModeChange('text-to-image')}>Text to Image</button>
-                <button type="button" className={mode === 'image-to-interior' ? 'active' : ''} onClick={() => handleModeChange('image-to-interior')}>Image to Interior</button>
-                <button type="button" className={mode === 'outline' ? 'active' : ''} onClick={() => handleModeChange('outline')}>Outline</button>
-                <button type="button" className={mode === 'architectural' ? 'active' : ''} onClick={() => handleModeChange('architectural')}>Architectural Plan</button>
-            </div>
-            
-            {(mode === 'image-to-interior' || mode === 'architectural' || mode === 'outline') && renderImageUploader()}
+        <div className="mode-switcher">
+            <button type="button" className={mode === 'text-to-image' ? 'active' : ''} onClick={() => handleModeChange('text-to-image')}>Text to Image</button>
+            <button type="button" className={mode === 'image-to-interior' ? 'active' : ''} onClick={() => handleModeChange('image-to-interior')}>Image to Interior</button>
+            <button type="button" className={mode === 'outline' ? 'active' : ''} onClick={() => handleModeChange('outline')}>Outline</button>
+            <button type="button" className={mode === 'architectural' ? 'active' : ''} onClick={() => handleModeChange('architectural')}>Architectural</button>
+            <button type="button" className={mode === 'video' ? 'active' : ''} onClick={() => handleModeChange('video')}>Video</button>
+        </div>
+        {isApiKeyRequiredAndMissing ? renderApiKeyPrompt() : (
+          <form className="prompt-form" onSubmit={handleGenerate}>
+              {(mode === 'image-to-interior' || mode === 'architectural' || mode === 'outline' || mode === 'video') && renderImageUploader()}
 
-            <label htmlFor="prompt-input">Your Prompt</label>
-            <textarea
-              id="prompt-input"
-              placeholder={
-                mode === 'text-to-image' ? "e.g., A majestic lion wearing a crown, cinematic lighting" : 
-                mode === 'image-to-interior' ? "e.g., Change the sofa to a blue velvet one, modern style" :
-                mode === 'outline' ? "e.g., Use thicker lines for the main subject" :
-                "e.g., A modern 2-bedroom apartment with an open kitchen, rendered in a photorealistic style"
-              }
-              rows={mode === 'architectural' ? 2 : 4}
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              disabled={isLoading}
-            ></textarea>
-            
-            {mode === 'architectural' && renderArchitecturalInputs()}
+              <label htmlFor="prompt-input">Your Prompt</label>
+              <textarea
+                id="prompt-input"
+                placeholder={
+                  mode === 'text-to-image' ? "e.g., A majestic lion wearing a crown, cinematic lighting" : 
+                  mode === 'image-to-interior' ? "e.g., Change the sofa to a blue velvet one, modern style" :
+                  mode === 'outline' ? "e.g., Use thicker lines for the main subject" :
+                  mode === 'video' ? "e.g., A cinematic shot of a car driving through a neon-lit city at night" :
+                  "e.g., A modern 2-bedroom apartment with an open kitchen, rendered in a photorealistic style"
+                }
+                rows={mode === 'architectural' ? 2 : 4}
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                disabled={isLoading}
+              ></textarea>
+              
+              {mode === 'architectural' && renderArchitecturalInputs()}
 
-            {(mode === 'text-to-image' || mode === 'image-to-interior') && (
-              <div className="style-presets">
-                {(Object.keys(stylePresets) as Array<StylePreset>).map((style) => (
-                  <button
-                    key={style}
-                    type="button"
-                    className={`style-button ${selectedStyle === style ? 'active' : ''}`}
-                    onClick={() => handleStyleClick(style)}
-                  >
-                    {style.charAt(0).toUpperCase() + style.slice(1)}
-                  </button>
-                ))}
-              </div>
-            )}
-            
-            <button
-              type="submit"
-              className="generate-button"
-              disabled={isLoading || !prompt || ((mode === 'image-to-interior' || mode === 'outline') && !inputImage) || (mode === 'architectural' && !inputImage && rooms.some(r => !r.name))}
-            >
-              {isLoading ? 'Generating...' : 'Generate'}
-            </button>
-          </form>
+              {mode === 'video' && (
+                <div className="video-options">
+                    <fieldset>
+                        <legend>Aspect Ratio</legend>
+                        <div>
+                            <input type="radio" id="16-9" name="aspectRatio" value="16:9" checked={videoAspectRatio === '16:9'} onChange={() => setVideoAspectRatio('16:9')} />
+                            <label htmlFor="16-9">16:9</label>
+                        </div>
+                        <div>
+                            <input type="radio" id="9-16" name="aspectRatio" value="9:16" checked={videoAspectRatio === '9:16'} onChange={() => setVideoAspectRatio('9:16')} />
+                            <label htmlFor="9-16">9:16</label>
+                        </div>
+                    </fieldset>
+                    <fieldset>
+                        <legend>Resolution</legend>
+                        <div>
+                            <input type="radio" id="1080p" name="resolution" value="1080p" checked={videoResolution === '1080p'} onChange={() => setVideoResolution('1080p')} />
+                            <label htmlFor="1080p">1080p</label>
+                        </div>
+                        <div>
+                            <input type="radio" id="720p" name="resolution" value="720p" checked={videoResolution === '720p'} onChange={() => setVideoResolution('720p')} />
+                            <label htmlFor="720p">720p</label>
+                        </div>
+                    </fieldset>
+                </div>
+              )}
+              
+              {(mode === 'text-to-image' || mode === 'image-to-interior') && (
+                <div className="style-presets">
+                  {(Object.keys(stylePresets) as Array<StylePreset>).map((style) => (
+                    <button
+                      key={style}
+                      type="button"
+                      className={`style-button ${selectedStyle === style ? 'active' : ''}`}
+                      onClick={() => handleStyleClick(style)}
+                    >
+                      {style.charAt(0).toUpperCase() + style.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              )}
+              
+              <button
+                type="submit"
+                className="generate-button"
+                disabled={isLoading || !prompt || ((mode === 'image-to-interior' || mode === 'outline') && !inputImage) || (mode === 'architectural' && !inputImage && rooms.some(r => !r.name))}
+              >
+                {isLoading ? 'Generating...' : `Generate`}
+              </button>
+            </form>
+        )}
       </section>
       <section className="output-section">{renderOutput()}</section>
     </main>
+    </>
   );
 };
 
+interface AppUser {
+    email: string;
+    freeImageCredits: number;
+    freeVideoCredits: number;
+    paidCredits: number;
+}
+
+
 const App = () => {
-    const [user, setUser] = useState<{ email: string } | null>(() => {
+    const [user, setUser] = useState<AppUser | null>(() => {
         try {
             const savedUser = localStorage.getItem('intelligent-architect-user');
-            return savedUser ? JSON.parse(savedUser) : null;
+            if (savedUser) {
+                const parsedUser = JSON.parse(savedUser);
+                // Migration for old user format
+                if (typeof parsedUser.credits !== 'undefined') {
+                    return {
+                        email: parsedUser.email,
+                        freeImageCredits: 5,
+                        freeVideoCredits: 3,
+                        paidCredits: parsedUser.credits,
+                    };
+                }
+                return parsedUser;
+            }
+            return null;
         } catch (error) {
             console.error("Failed to parse user from localStorage", error);
             return null;
@@ -1153,18 +1503,46 @@ const App = () => {
     }, [user]);
 
     const handleLogin = (email: string) => {
-        setUser({ email });
+        setUser({
+            email,
+            freeImageCredits: 5,
+            freeVideoCredits: 3,
+            paidCredits: 0
+        });
     };
 
     const handleLogout = () => {
         setUser(null);
+    };
+
+    const handlePurchaseCredits = (amount: number) => {
+        setUser(currentUser => {
+            if (!currentUser) return null;
+            return { ...currentUser, paidCredits: currentUser.paidCredits + amount };
+        });
+    };
+
+    const handleDeductCredits = (type: 'free-image' | 'free-video' | 'paid', amount: number) => {
+        setUser(currentUser => {
+            if (!currentUser) return null;
+            switch (type) {
+                case 'free-image':
+                    return { ...currentUser, freeImageCredits: Math.max(0, currentUser.freeImageCredits - 1) };
+                case 'free-video':
+                    return { ...currentUser, freeVideoCredits: Math.max(0, currentUser.freeVideoCredits - 1) };
+                case 'paid':
+                    return { ...currentUser, paidCredits: Math.max(0, currentUser.paidCredits - amount) };
+                default:
+                    return currentUser;
+            }
+        });
     };
     
     if (!user) {
         return <Login onLogin={handleLogin} />;
     }
 
-    return <IntelligentArchitectApp userEmail={user.email} onLogout={handleLogout} />;
+    return <IntelligentArchitectApp user={user} onLogout={handleLogout} onDeductCredits={handleDeductCredits} onPurchaseCredits={handlePurchaseCredits} />;
 }
 
 
