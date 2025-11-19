@@ -1,4 +1,3 @@
-import * as functions from 'firebase-functions';
 import express from 'express';
 import cors from 'cors';
 import fetch from 'node-fetch';
@@ -80,5 +79,8 @@ app.post('/rupantorpay-verify', async (req: express.Request, res: express.Respon
   }
 });
 
-// Expose the Express app as a single Cloud Function
-export const api = functions.https.onRequest(app);
+// Start the server
+const port = process.env.PORT || 8080;
+app.listen(port, () => {
+  console.log(`Server listening on port ${port}`);
+});
