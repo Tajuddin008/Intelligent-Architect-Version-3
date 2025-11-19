@@ -1,3 +1,9 @@
+build:
+  run: |
+    npm install
+    npm run build --prefix functions
+run:
+  run: node functions/lib/index.js
 env:
   - variable: RUPANTORPAY_API_KEY
     secret: RUPANTORPAY_API_KEY
