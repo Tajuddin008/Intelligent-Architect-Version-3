@@ -1,0 +1,3 @@
+env:
+  - variable: RUPANTORPAY_API_KEY
+    secret: RUPANTORPAY_API_KEY
