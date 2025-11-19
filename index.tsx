@@ -586,7 +586,7 @@ const IntelligentArchitectApp = ({ user, onLogout, onDeductCredits, onPurchaseCr
     resetOutputs();
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       let imageUrl: string | null = null;
       let generationSuccess = false;
 
@@ -617,7 +617,7 @@ const IntelligentArchitectApp = ({ user, onLogout, onDeductCredits, onPurchaseCr
     
         const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
         if (downloadLink) {
-            const videoResponse = await fetch(`${downloadLink}&key=${process.env.API_KEY}`);
+            const videoResponse = await fetch(`${downloadLink}&key=${process.env.GEMINI_API_KEY}`);
             if (!videoResponse.ok) {
                 throw new Error(`Failed to download video: ${videoResponse.statusText}`);
             }
@@ -809,7 +809,7 @@ Rooms to include:\n${roomDescriptions}`;
     setError(null);
 
     try {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
         const originalImageMimeType = generatedImage.match(/^data:(image\/[^;]+);/)?.[1] || 'image/png';
         const originalImageBase64 = generatedImage.split(',')[1];
         
