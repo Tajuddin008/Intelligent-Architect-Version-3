@@ -3,11 +3,13 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "main": "functions/lib/index.js",
   "scripts": {
     "postinstall": "npm install --prefix functions",
     "dev": "vite",
     "build": "npm run build --prefix functions && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "node functions/lib/index.js"
   },
   "dependencies": {
     "@google/genai": "^1.25.0",
