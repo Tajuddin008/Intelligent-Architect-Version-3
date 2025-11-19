@@ -15,9 +15,13 @@
         "source": "**",
         "destination": "/index.html"
       }
+    ],
+    "predeploy": [
+      "npm run build"
     ]
   },
   "functions": {
+    "source": "functions",
     "runtime": "nodejs20"
   }
 }
